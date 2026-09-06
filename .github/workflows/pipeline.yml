@@ -1,0 +1,57 @@
+name: DevSecOps Security Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  security-gates-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout the code
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Required for Gitleaks to scan history
+
+    # GATE 1: Secrets Scanning (Gitleaks)
+    - name: Run Gitleaks (Secrets Scan)
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # Only required for Orgs, free for personal
+
+    # GATE 2: Dependency Scanning (npm audit)
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: Generate Lockfile for Audit
+      run: npm install --package-lock-only --ignore-scripts
+      
+    - name: Run npm audit (Dependency Scan)
+      # This will FAIL the pipeline if it finds Critical vulnerabilities (which Juice Shop has!)
+      run: npm audit --audit-level=critical 
+
+    # GATE 3: SAST (Semgrep)
+    - name: Run Semgrep (SAST)
+      run: |
+        pip install semgrep
+        # Scans for OWASP Top 10 vulnerabilities. Fails if issues are found.
+        semgrep --config=p/owasp-top-ten --error . 
+
+    # GATE 4: Container Scanning (Trivy)
+    - name: Build Docker Image
+      run: docker build -t juiceshop-local:latest .
+
+    - name: Run Trivy (Container Image Scan)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'juiceshop-local:latest'
+        format: 'table'
+        severity: 'CRITICAL,HIGH'
+        exit-code: '1' # This forces the pipeline to FAIL if Critical/High OS flaws are found
