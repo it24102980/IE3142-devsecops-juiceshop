@@ -55,3 +55,15 @@ jobs:
         format: 'table'
         severity: 'CRITICAL,HIGH'
         exit-code: '0' # This forces the pipeline to FAIL if Critical/High OS flaws are found
+
+    - name: Verify Secrets Management
+      run: |
+        if [ -n "$SECRET" ]; then
+          echo "Secret successfully injected from GitHub Encrypted Secrets!"
+        else
+          echo "Secret is missing!"
+          exit 1
+          fi
+      env:
+        SECRET: ${{ secrets.JUICE_SHOP_SECRET_KEY }}
+    
